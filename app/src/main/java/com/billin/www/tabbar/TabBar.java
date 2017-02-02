@@ -2,6 +2,7 @@ package com.billin.www.tabbar;
 
 import android.content.Context;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.view.MotionEvent;
 import android.view.VelocityTracker;
 import android.view.View;
@@ -17,17 +18,25 @@ public class TabBar extends ViewGroup {
 
     private static final String TAG = "TabBar";
 
-    public static final int ON_DOWN = 1;
+    final static int START = 0;
 
-    public static final int ON_UP = 2;
+    final static int ON_DOWN = 1;
 
-    public static final int START_MOVE = 3;
+    final static int ON_MOVE = 2;
 
-    public static final int ON_MOVE = 4;
+    final static int ON_UP = 3;
 
-    public static final int END_MOVE = 5;
+    final static int SETTING = 4;
 
-    public static final int SETTING_MOVE = 6;
+    final static int SCROLLING = 5;
+
+    final static int STOP_SCROLLING = 6;
+
+    final static int ON_MANUAL_MOVE = 7;
+
+    final static int END = 8;
+
+    final static int ERROR = 9;
 
     private OffsetOfPosition mOffsetOfPosition = new OffsetOfPosition() {
         @Override
@@ -41,11 +50,6 @@ public class TabBar extends ViewGroup {
      * 用于纪录最后一个触控点的变量
      */
     private float mLastX;
-
-    /**
-     * 判断视图是否正在移动
-     */
-    private boolean mIsMove;
 
     /**
      * 当前选中子控件的位置
@@ -66,6 +70,8 @@ public class TabBar extends ViewGroup {
      * 分配给子控件的高度
      */
     private int mCellHeight;
+
+    private StatusController mStatusController = new StatusController();
 
     private VelocityTracker mVelocityTracker = VelocityTracker.obtain();
 
@@ -140,18 +146,16 @@ public class TabBar extends ViewGroup {
 
         switch (event.getAction()) {
             case MotionEvent.ACTION_DOWN:
+                mStatusController.put(StatusController.DOWN);
                 mVelocityTracker.clear();
 
                 mLastX = x;
                 postInvalidate();
 
-                if (mListener != null)
-                    mListener.onStateChange(ON_DOWN);
-
                 break;
 
             case MotionEvent.ACTION_MOVE:
-                mIsMove = true;
+                mStatusController.put(StatusController.MOVE);
 
                 if (!mScroller.isFinished()) {
                     mScroller.forceFinished(true);
@@ -169,16 +173,12 @@ public class TabBar extends ViewGroup {
                 scrollBy((int) dx, 0);
                 mLastX = x;
 
-                // call listener
-                if (mListener != null)
-                    mListener.onScroll(mOffsetOfPosition);
-
                 break;
 
             case MotionEvent.ACTION_UP:
-                int index;
-                index = getScrollX() / mCellWidth;
-                index = getScrollX() % mCellWidth > mCellWidth / 2 ? index + 1 : index;
+                mStatusController.put(StatusController.UP);
+
+                int index = getMostRecentPosition();
 
                 mVelocityTracker.addMovement(event);
                 mVelocityTracker.computeCurrentVelocity(1000);
@@ -188,47 +188,28 @@ public class TabBar extends ViewGroup {
 
                 moveToPosition(index, true);
 
-                if (mListener != null)
-                    mListener.onStateChange(ON_UP);
-
                 break;
         }
 
         return true;
     }
 
+    private int getMostRecentPosition() {
+        int index = getScrollX() / mCellWidth;
+        return getScrollX() % mCellWidth > mCellWidth / 2 ? index + 1 : index;
+    }
+
     @Override
     public void computeScroll() {
         super.computeScroll();
         if (mScroller.computeScrollOffset()) {
+
+            mStatusController.put(StatusController.MANUAL_MOVE);
+
             scrollTo(mScroller.getCurrX(), 0);
             postInvalidate();
-
-            if (mListener != null) {
-                mListener.onScroll(mOffsetOfPosition);
-            }
-        } else {
-            if (mListener != null && mIsMove && getScrollX() == mSelectedPosition * mCellWidth) {
-                mListener.onStateChange(END_MOVE);
-                mIsMove = false;
-            }
         }
     }
-
-/*
-这一个方法会导致不断的调用dispatchDraw() 估计是因为子视图的重绘又导致了父容器的再一次绘制
-    private void showComponent(boolean isShow) {
-        if (mIsShow) {
-            for (int i = 0; i < getChildCount(); i++) {
-                getChildAt(i).setVisibility(VISIBLE);
-            }
-        } else {
-            for (int i = 0; i < getChildCount(); i++) {
-                getChildAt(i).setVisibility(INVISIBLE);
-            }
-            getChildAt(mSelectedPosition).setVisibility(VISIBLE);
-        }
-    }*/
 
     /**
      * 移动到指定位置
@@ -236,7 +217,7 @@ public class TabBar extends ViewGroup {
      * @param position 指定的位置
      * @param smooth   是否流畅移动
      */
-    public void moveToPosition(int position, boolean smooth) {
+    private void moveToPosition(int position, boolean smooth) {
         // check the position is invalid or not
         position = position < 0 ? 0 : position;
         position = position >= mNotGoneCount ? mNotGoneCount - 1 : position;
@@ -259,26 +240,18 @@ public class TabBar extends ViewGroup {
             return;
         }
         mSelectedPosition = position;
-
-        if (mListener != null)
-            mListener.onSelected(mSelectedPosition);
     }
 
     public void setOffsetOfPosition(int position, float offset) {
-        // TODO: 2017/2/1 add scroll state
-        mIsMove = true;
-
+        // update selected position
         if (offset == 0) {
             mSelectedPosition = position;
-//            if (mListener != null)
-//                mListener.onSelected(position);
         }
+
+        mStatusController.put(StatusController.MOVE);
 
         int scrollX = (int) (mCellWidth * position + offset * getWidth() / 200.0);
         setScrollX(scrollX);
-
-        if (mListener != null)
-            mListener.onScroll(mOffsetOfPosition);
     }
 
     public void setListener(TabBarListener listener) {
@@ -288,6 +261,199 @@ public class TabBar extends ViewGroup {
 
     public void setAdapter(TabBarAdapter adapter) {
         adapter.setTabBar(this);
+    }
+
+    public int getCurrPosition() {
+        return mSelectedPosition;
+    }
+
+
+    private class StatusController {
+
+        final static int MOVE = 0;
+
+        final static int DOWN = 1;
+
+        final static int UP = 2;
+
+        final static int MANUAL_MOVE = 3;
+
+        int status;
+
+        int position = mSelectedPosition;
+
+        private boolean isConform() {
+            return getScrollX() == mSelectedPosition * mCellWidth;
+        }
+
+        void checkAndInform(int newStatus) {
+            if (newStatus == status) {
+                return;
+            }
+
+            status = newStatus;
+            mListener.onStateChange(newStatus);
+        }
+
+        void start(int op) {
+            if (DOWN == op) {
+                checkAndInform(ON_DOWN);
+            } else if (op == MANUAL_MOVE) {
+                checkAndInform(ON_MOVE);
+            } else if (op == UP) {
+                checkAndInform(ON_UP);
+            } else//noinspection StatementWithEmptyBody
+                if (op == MOVE) {
+
+                } else {
+                    error(op);
+                }
+        }
+
+        void onDown(int op) {
+            if (op == MOVE) {
+                checkAndInform(ON_MOVE);
+            } else if (op == UP) {
+                checkAndInform(ON_UP);
+            } else {
+                error(op);
+            }
+        }
+
+        void onMove(int op) {
+            if (UP == op) {
+                checkAndInform(ON_UP);
+            } else if (MOVE == op) {
+                // nothing to do
+            } else {
+                error(op);
+            }
+        }
+
+        void onManualMove(int op) {
+            if (op == MANUAL_MOVE && isConform()) {
+                checkAndInform(END);
+            } else if (op == MANUAL_MOVE) {
+                // nothing to do
+            } else {
+                error(op);
+            }
+        }
+
+        void onUp(int op) {
+            checkAndInform(SETTING);
+            setting(op);
+        }
+
+        void setting(int op) {
+            if (mSelectedPosition != position) {
+                position = mSelectedPosition;
+                mListener.onSelected(mSelectedPosition);
+            }
+
+            if (op == MOVE) {
+                checkAndInform(SCROLLING);
+            } else {
+                error(op);
+            }
+        }
+
+        void scrolling(int op) {
+            if (op == DOWN) {
+                checkAndInform(STOP_SCROLLING);
+            } else if (op == MOVE && isConform()) {
+                checkAndInform(END);
+            } else if (op == MOVE) {
+                // nothing to do
+            } else {
+                error(op);
+            }
+        }
+
+        void stopScrolling(int op) {
+            if (op == MOVE) {
+                checkAndInform(ON_MOVE);
+            } else if (op == UP) {
+                checkAndInform(SETTING);
+            } else {
+                error(op);
+            }
+        }
+
+        void end(int op) {
+            checkAndInform(START);
+        }
+
+        void put(int op) {
+            if (mListener == null)
+                return;
+
+            if (op == MOVE) {
+                mListener.onScroll(mOffsetOfPosition);
+            }
+
+            switch (status) {
+                case START:
+                    start(op);
+                    break;
+
+                case ON_DOWN:
+                    onDown(op);
+                    break;
+
+                case ON_MOVE:
+                    onMove(op);
+                    break;
+
+                case ON_UP:
+                    onUp(op);
+                    break;
+
+                case SETTING:
+                    setting(op);
+                    break;
+
+                case SCROLLING:
+                    scrolling(op);
+                    break;
+
+                case STOP_SCROLLING:
+                    stopScrolling(op);
+                    break;
+
+                case ON_MANUAL_MOVE:
+                    onManualMove(op);
+                    break;
+
+                case END:
+                    end(op);
+                    break;
+
+                case ERROR:
+                    errorOp(op);
+                    break;
+            }
+        }
+
+        void errorOp(int op) {
+            if (isConform()) {
+                checkAndInform(END);
+            }
+        }
+
+        /**
+         * 使TabBar回到正常状态且重置TabBar状态
+         */
+        void error(int op) {
+            Log.d(TAG, "error: origin status" + status + " op: " + op);
+            status = ERROR;
+            position = getMostRecentPosition();
+            if (position != mSelectedPosition) {
+                mSelectedPosition = position;
+                mListener.onSelected(mSelectedPosition);
+            }
+            moveToPosition(mSelectedPosition, true);
+        }
     }
 
     public abstract static class TabBarAdapter {
@@ -316,10 +482,6 @@ public class TabBar extends ViewGroup {
             mTabBar = tabBar;
             notifyDataSetChanged();
         }
-    }
-
-    public int getCurrPosition() {
-        return mSelectedPosition;
     }
 
     public interface TabBarListener {

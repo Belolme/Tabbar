@@ -49,6 +49,7 @@ public class MainActivity extends AppCompatActivity {
         tabBar.setListener(new TabBar.TabBarListener() {
             @Override
             public void onScroll(TabBar.OffsetOfPosition offsetOfPosition) {
+//                Log.d(TAG, "onScroll: ");
                 int count = tabBar.getChildCount();
                 for (int i = 0; i < count; i++) {
                     TabBarItem tabBarItem = (TabBarItem) tabBar.getChildAt(i);
@@ -64,14 +65,14 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void onSelected(int position) {
-//                Log.d(TAG, "onSelected: " + position);
+                Log.d(TAG, "onSelected: " + position);
             }
 
             @Override
             public void onStateChange(int state) {
+                Log.d(TAG, "onStateChange: " + state);
                 int count = tabBar.getChildCount();
-                if (state == TabBar.ON_UP) {
-                    Log.d(TAG, "onUp: " + tabBar.getCurrPosition());
+                if (state == TabBar.END) {
                     for (int i = 0; i < count; i++) {
                         TabBarItem tabBarItem = (TabBarItem) tabBar.getChildAt(i);
 
@@ -91,7 +92,6 @@ public class MainActivity extends AppCompatActivity {
                         tabBarItem.setTag(animator);
                     }
                 } else if (state == TabBar.ON_DOWN) {
-                    Log.d(TAG, "onDown: ");
                     for (int i = 0; i < count; i++) {
                         TabBarItem tabBarItem = (TabBarItem) tabBar.getChildAt(i);
                         ObjectAnimator animator = (ObjectAnimator) tabBarItem.getTag();
